@@ -1,4 +1,5 @@
 let gatherData = false;
+let net;
 
 let canvas = document.getElementById("game");
 let ctx = canvas.getContext("2d");
@@ -12,7 +13,7 @@ class SnakePart {
   }
 }
 // speed of the game
-let speed = 7;
+let speed = 2;
 // size and count of a tile
 let tileCount = 20;
 let tileSize = canvas.width / tileCount - 2;
@@ -56,7 +57,7 @@ const getBoardState = () => {
     headX,
     headY,
     score,
-    snakeCoords,
+    snakeCoords: snakeCoords.flat(),
   };
   return state;
 };
@@ -80,13 +81,6 @@ function drawGame() {
   drawSnake();
 
   drawScore();
-
-  if (score > 5) {
-    speed = 9;
-  }
-  if (score > 10) {
-    speed = 11;
-  }
 
   setTimeout(drawGame, 1000 / speed);
 }
@@ -237,35 +231,38 @@ function keyDown(event) {
 drawGame();
 
 function train() {
-  const net = new brain.NeuralNetworkGPU({
-    hiddenLayers: [256, 128],
-    activation: "relu",
-  });
-  console.log(net);
-  const trainingData = JSON.parse(localStorage.getItem("trainingData")) || [];
+  if (net) return net;
+  else {
+    net = new brain.NeuralNetwork({
+      hiddenLayers: [8, 4],
+      activation: "relu",
+    });
+    console.log(net);
+    const trainingData = JSON.parse(localStorage.getItem("trainingData")) || [];
 
-  const _trainingData = trainingData.map((data) => {
-    return {
-      input: data.boardState,
-      output: {
-        up: data.action === "up" ? 1 : 0,
-        down: data.action === "down" ? 1 : 0,
-        right: data.action === "right" ? 1 : 0,
-        left: data.action === "left" ? 1 : 0,
-      },
-    };
-  });
-  console.log(_trainingData, "training data");
+    const _trainingData = trainingData.map((data) => {
+      return {
+        input: data.boardState,
+        output: {
+          up: data.action === "up" ? 1 : 0,
+          down: data.action === "down" ? 1 : 0,
+          right: data.action === "right" ? 1 : 0,
+          left: data.action === "left" ? 1 : 0,
+        },
+      };
+    });
+    console.log(_trainingData, "training data");
 
-  net.train(_trainingData, {
-    iterations: 20000,
-    log: true,
-    logPeriod: 1000,
-    learningRate: 0.001,
-  });
+    net.train(_trainingData, {
+      iterations: 20000,
+      log: true,
+      logPeriod: 1000,
+      learningRate: 0.001,
+    });
 
-  console.log(net.toJSON(), "stats");
-  return net;
+    console.log(net.toJSON(), "stats");
+    return net;
+  }
 }
 
 function onChangeDirection(direction) {
