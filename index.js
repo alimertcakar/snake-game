@@ -16,6 +16,8 @@ class SnakePart {
 let speed = 2;
 // size and count of a tile
 let tileCount = 20;
+const maxCoord = tileCount - 1;
+const maxCells = tileCount * tileCount;
 let tileSize = canvas.width / tileCount - 2;
 // head of the snake
 let headX = 10;
@@ -44,9 +46,9 @@ const getBoardState = () => {
     const part = recentParts[i];
     snakeCoords.push([part.x, part.y]);
   }
-  // pad with [-1, -1] until length is exactly 10
+  // pad with [0, 0] until length is exactly 10
   while (snakeCoords.length < 10) {
-    snakeCoords.push([-1, -1]);
+    snakeCoords.push([0, 0]);
   }
   const state = {
     xVelocity,
@@ -184,8 +186,10 @@ function checkAppleCollision() {
 
 document.body.addEventListener("keydown", keyDown);
 
+const arrowKeysKeyCodes = [38, 40, 37, 39];
+
 function keyDown(event) {
-  if (gatherData) {
+  if (gatherData && arrowKeysKeyCodes.includes(event.keyCode)) {
     const state = getBoardState();
     const localData = JSON.parse(localStorage.getItem("trainingData")) || [];
     localData.push({
@@ -230,6 +234,37 @@ function keyDown(event) {
 
 drawGame();
 
+function normalizeBoardState(state) {
+  const {
+    xVelocity,
+    yVelocity,
+    appleX,
+    appleY,
+    tailLength,
+    headX,
+    headY,
+    score,
+    snakeCoords,
+  } = state;
+
+  const normalized = {
+    xVelocity: (xVelocity + 1) / 2, // -1..1 -> 0..1
+    yVelocity: (yVelocity + 1) / 2,
+    appleX: appleX / maxCoord,
+    appleY: appleY / maxCoord,
+    tailLength: Math.min(tailLength, maxCells) / maxCells,
+    headX: headX / maxCoord,
+    headY: headY / maxCoord,
+    score: Math.min(score, maxCells) / maxCells,
+  };
+
+  snakeCoords.forEach((v, i) => {
+    normalized["sc" + i] = v / maxCoord;
+  });
+
+  return normalized;
+}
+
 function train() {
   if (net) return net;
   else {
@@ -242,7 +277,7 @@ function train() {
 
     const _trainingData = trainingData.map((data) => {
       return {
-        input: data.boardState,
+        input: normalizeBoardState(data.boardState),
         output: {
           up: data.action === "up" ? 1 : 0,
           down: data.action === "down" ? 1 : 0,
@@ -264,32 +299,42 @@ function train() {
     return net;
   }
 }
-
 function onChangeDirection(direction) {
-  const keyMap = {
-    up: { key: "ArrowUp", keyCode: 38 },
-    down: { key: "ArrowDown", keyCode: 40 },
-    left: { key: "ArrowLeft", keyCode: 37 },
-    right: { key: "ArrowRight", keyCode: 39 },
-  };
-
-  const keyInfo = keyMap[direction];
-  if (!keyInfo) return;
-
-  document.dispatchEvent(
-    new KeyboardEvent("keydown", {
-      key: keyInfo.key,
-      code: keyInfo.key,
-      keyCode: keyInfo.keyCode,
-      which: keyInfo.keyCode,
-      bubbles: true,
-    })
-  );
+  switch (direction) {
+    case "up":
+      if (inputsYVelocity === 1) return;
+      inputsXVelocity = 0;
+      inputsYVelocity = -1;
+      break;
+    case "down":
+      if (inputsYVelocity === -1) return;
+      inputsXVelocity = 0;
+      inputsYVelocity = 1;
+      break;
+    case "left":
+      if (inputsXVelocity === 1) return;
+      inputsYVelocity = 0;
+      inputsXVelocity = -1;
+      break;
+    case "right":
+      if (inputsXVelocity === -1) return;
+      inputsYVelocity = 0;
+      inputsXVelocity = 1;
+      break;
+    default:
+      break;
+  }
 }
 function onGameStateUpdate() {
   if (!gatherData) {
     const net = train();
-    const output = net.run(getBoardState());
-    onChangeDirection(output);
+
+    const output = net.run(normalizeBoardState(getBoardState()));
+    console.log(output, "output");
+    const direction = Object.keys(output).reduce((a, b) =>
+      output[a] > output[b] ? a : b
+    );
+
+    onChangeDirection(direction);
   }
 }
