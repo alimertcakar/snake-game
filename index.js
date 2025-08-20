@@ -1,5 +1,5 @@
 let canvas = document.getElementById("game");
-let ctx = canvas.getContext("2d");  
+let ctx = canvas.getContext("2d");
 // draw on the screen to get the context, ask canvas  to get the 2d context
 
 // snake axis
@@ -11,7 +11,7 @@ class SnakePart {
 }
 // speed of the game
 let speed = 7;
-// size and count of a tile 
+// size and count of a tile
 let tileCount = 20;
 let tileSize = canvas.width / tileCount - 2;
 // head of the snake
@@ -33,8 +33,9 @@ let score = 0;
 
 let gulpSound = new Audio("gulp.mp3");
 
-//game loop
+// game loop
 function drawGame() {
+  onGameStateUpdate();
   xVelocity = inputsXVelocity;
   yVelocity = inputsYVelocity;
 
@@ -110,7 +111,6 @@ function isGameOver() {
   }
 
   return gameOver;
-
 }
 
 function drawScore() {
@@ -197,3 +197,98 @@ function keyDown(event) {
 }
 
 drawGame();
+
+function train() {
+  const net = new brain.NeuralNetworkGPU({
+    hiddenLayers: [256, 128],
+    activation: "relu",
+  });
+  console.log(net);
+  const trainingData = JSON.parse(localStorage.getItem("trainingData")) || [];
+
+  const _trainingData = trainingData.map((data) => {
+    return {
+      input: data.boardState.concat(data.prevState),
+      output: [
+        data.action === "up" ? 1 : 0,
+        data.action === "down" ? 1 : 0,
+        data.action === "left" ? 1 : 0,
+        data.action === "right" ? 1 : 0,
+      ],
+    };
+  });
+  console.log(_trainingData, "training data");
+
+  net.train(_trainingData, {
+    iterations: 20000,
+    log: true,
+    logPeriod: 1000,
+    learningRate: 0.001,
+  });
+
+  console.log(net.toJSON(), "stats");
+  return net;
+}
+
+function onChangeDirection(direction) {
+  const keyMap = {
+    up: { key: "ArrowUp", keyCode: 38 },
+    down: { key: "ArrowDown", keyCode: 40 },
+    left: { key: "ArrowLeft", keyCode: 37 },
+    right: { key: "ArrowRight", keyCode: 39 },
+  };
+
+  const keyInfo = keyMap[direction];
+  if (!keyInfo) return;
+
+  document.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: keyInfo.key,
+      code: keyInfo.key,
+      keyCode: keyInfo.keyCode,
+      which: keyInfo.keyCode,
+      bubbles: true,
+    })
+  );
+}
+
+const onGameStateUpdate = () => {
+  let snakeCoords = [];
+  // take last up to 10 parts (most recent positions)
+  const recentParts = snakeParts.slice(-10);
+  for (let i = 0; i < recentParts.length; i++) {
+    const part = recentParts[i];
+    snakeCoords.push([part.x, part.y]);
+  }
+  // pad with [-1, -1] until length is exactly 10
+  while (snakeCoords.length < 10) {
+    snakeCoords.push([-1, -1]);
+  }
+
+  const state = {
+    xVelocity,
+    yVelocity,
+    appleX,
+    appleY,
+    tailLength,
+    headX,
+    headY,
+    score,
+    snakeCoords,
+  };
+
+  if (window?.gatherData) {
+    const localData = JSON.parse(localStorage.getItem("trainingData")) || [];
+    localData.push({
+      boardState: state,
+    });
+    localStorage.setItem("trainingData", JSON.stringify(localData));
+  } else {
+    const net = train();
+    const output = net.run(state);
+    const actionIndex = output.indexOf(Math.max(...output));
+    const actionMap = ["up", "down", "left", "right"];
+    const nextAction = actionMap[actionIndex];
+    onChangeDirection(nextAction);
+  }
+};
